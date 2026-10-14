@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: lms
+      POSTGRES_USER: lms
+      POSTGRES_PASSWORD: lms
+    ports:
+      - "5432:5432"
+    volumes:
+      - lms-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lms -d lms"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/lms
+      DB_USERNAME: lms
+      DB_PASSWORD: lms
+      JWT_SECRET: local-docker-secret-change-me-123456789012345
+      JWT_ISSUER: lms-portfolio
+      ADMIN_ENABLED: "true"
+      ADMIN_EMAIL: admin@lms.local
+      ADMIN_PASSWORD: ChangeMe123!
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  lms-postgres-data:

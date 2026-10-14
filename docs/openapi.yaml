@@ -1,0 +1,847 @@
+openapi: 3.0.1
+info:
+  title: LMS - Learning Management System API
+  version: 1.0.0
+  description: |
+    REST API for Learning Management System with JWT authentication.
+    
+    ## Authentication
+    The API uses **JWT (JSON Web Tokens)** with **OAuth2 Resource Server** pattern.
+    
+    ### Token Types
+    - **Access Token**: Short-lived (15 min), used for API authorization
+    - **Refresh Token**: Long-lived (7 days), used to obtain new access tokens
+    
+    ### Authentication Flow
+    1. **Register** or **Login** → Receive `accessToken` + `refreshToken`
+    2. Include `Authorization: Bearer <accessToken>` in subsequent requests
+    3. When access token expires, call `POST /api/auth/refresh` with refresh token
+    4. Tokens contain claims: `sub` (user ID), `role` (STUDENT/ADMIN), `type` (access/refresh)
+    
+    ### Role-Based Access Control
+    | Role | Permissions |
+    |------|-------------|
+    | **STUDENT** | View courses, enroll, manage own enrollments & task logs |
+    | **ADMIN** | Full course CRUD, all student permissions |
+
+  contact:
+    name: LMS Portfolio Project
+    url: https://github.com/portfolio/lms
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080/api
+    description: Development server
+  - url: https://api.lms.example.com/api
+    description: Production server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT Authorization header using the Bearer scheme.
+        Example: "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9..."
+  
+  schemas:
+    # ========== AUTH SCHEMAS ==========
+    RegisterRequest:
+      type: object
+      required: [firstName, lastName, birthDate, email, phone, password]
+      properties:
+        firstName:
+          type: string
+          maxLength: 100
+          example: "John"
+          description: "Student's first name"
+        lastName:
+          type: string
+          maxLength: 100
+          example: "Doe"
+          description: "Student's last name"
+        birthDate:
+          type: string
+          format: date
+          example: "2000-01-15"
+          description: "Date of birth (must be 16+ years ago)"
+        email:
+          type: string
+          format: email
+          maxLength: 320
+          example: "john.doe@example.com"
+          description: "Unique email address"
+        phone:
+          type: string
+          maxLength: 30
+          example: "+55 11 99999-9999"
+          description: "Phone number"
+        password:
+          type: string
+          minLength: 8
+          maxLength: 72
+          example: "SecurePass123"
+          description: "Password (min 8 chars)"
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: "john.doe@example.com"
+        password:
+          type: string
+          example: "SecurePass123"
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiJ9..."
+          description: "Refresh token from login/register response"
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        firstName:
+          type: string
+          example: "John"
+        lastName:
+          type: string
+          example: "Doe"
+        birthDate:
+          type: string
+          format: date
+          example: "2000-01-15"
+        email:
+          type: string
+          format: email
+          example: "john.doe@example.com"
+        phone:
+          type: string
+          example: "+55 11 99999-9999"
+        role:
+          type: string
+          enum: [STUDENT, ADMIN]
+          example: "STUDENT"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00Z"
+
+    AuthResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiJ9..."
+          description: "Short-lived access token (15 min)"
+        refreshToken:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiJ9..."
+          description: "Long-lived refresh token (7 days)"
+        tokenType:
+          type: string
+          example: "Bearer"
+        user:
+          $ref: '#/components/schemas/UserResponse'
+
+    # ========== COURSE SCHEMAS ==========
+    CourseRequest:
+      type: object
+      required: [name, description]
+      properties:
+        name:
+          type: string
+          maxLength: 200
+          example: "Introduction to Spring Boot"
+          description: "Unique course name"
+        description:
+          type: string
+          maxLength: 2000
+          example: "Learn Spring Boot fundamentals including dependency injection, Spring Data JPA, and REST controllers."
+          description: "Course description"
+
+    CourseResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        name:
+          type: string
+          example: "Introduction to Spring Boot"
+        description:
+          type: string
+          example: "Learn Spring Boot fundamentals..."
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00Z"
+
+    # ========== ENROLLMENT SCHEMAS ==========
+    EnrollmentRequest:
+      type: object
+      required: [courseId]
+      properties:
+        courseId:
+          type: integer
+          format: int64
+          example: 1
+          description: "ID of the course to enroll in"
+
+    EnrollmentResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        courseId:
+          type: integer
+          format: int64
+          example: 1
+        courseName:
+          type: string
+          example: "Introduction to Spring Boot"
+        courseDescription:
+          type: string
+          example: "Learn Spring Boot fundamentals..."
+        studentId:
+          type: integer
+          format: int64
+          example: 1
+        enrolledAt:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00Z"
+        deadline:
+          type: string
+          format: date-time
+          example: "2024-07-15T10:30:00Z"
+          description: "Enrollment deadline (6 months from enrollment)"
+
+    # ========== TASK LOG SCHEMAS ==========
+    TaskLogRequest:
+      type: object
+      required: [date, category, description, timeSpent]
+      properties:
+        date:
+          type: string
+          format: date
+          example: "2024-01-20"
+          description: "Date of the learning activity"
+        category:
+          type: string
+          enum: [PESQUISA, PRATICA, ASSISTIR_VIDEOAULA]
+          example: "PRATICA"
+          description: "Task category code"
+        description:
+          type: string
+          maxLength: 2000
+          example: "Completed exercises for chapter 3"
+          description: "Description of the learning activity"
+        timeSpent:
+          type: string
+          format: date-time
+          example: "2024-01-20T01:30:00"
+          description: "Date must match 'date' field. Time must be in 30-min increments (e.g., 00:30, 01:00, 01:30)"
+
+    TaskLogResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        enrollmentId:
+          type: integer
+          format: int64
+          example: 1
+        date:
+          type: string
+          format: date
+          example: "2024-01-20"
+        category:
+          type: string
+          example: "PRATICA"
+        description:
+          type: string
+          example: "Completed exercises for chapter 3"
+        timeSpent:
+          type: string
+          format: date-time
+          example: "2024-01-20T01:30:00"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-01-20T14:30:00Z"
+
+    # ========== ERROR SCHEMAS ==========
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          type: integer
+          example: 400
+        message:
+          type: string
+          example: "Validation failed"
+        fieldErrors:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            email: "Email already in use"
+            password: "Password must be at least 8 characters"
+
+    # ========== TASK CATEGORY SCHEMAS ==========
+    TaskCategoryResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        code:
+          type: string
+          example: "PESQUISA"
+        displayName:
+          type: string
+          example: "Pesquisa"
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ========== AUTH ENDPOINTS (PUBLIC) ==========
+  /auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register a new student
+      description: |
+        Creates a new student account. 
+        - Minimum age: 16 years
+        - Email must be unique
+        - Returns JWT tokens on success
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Validation error (missing/invalid fields)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Business rule violation (e.g., under 16 years old)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Login and obtain JWT tokens
+      description: Authenticates user and returns access + refresh tokens
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Refresh access token
+      description: Uses refresh token to obtain new access token
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid or expired refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ========== COURSE ENDPOINTS ==========
+  /courses:
+    get:
+      tags: [Courses]
+      summary: List all courses
+      description: Returns all available courses. Accessible to authenticated users (STUDENT or ADMIN).
+      operationId: listCourses
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of courses
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CourseResponse'
+        '401':
+          description: Unauthorized - Missing or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden - Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags: [Courses]
+      summary: Create a new course (Admin only)
+      description: Creates a new course. Requires ADMIN role.
+      operationId: createCourse
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CourseRequest'
+      responses:
+        '201':
+          description: Course created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden - Admin role required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Course name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /courses/{id}:
+    get:
+      tags: [Courses]
+      summary: Get course by ID
+      description: Returns a specific course by its ID
+      operationId: getCourse
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Course ID
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Course found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden
+        '404':
+          description: Course not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags: [Courses]
+      summary: Update course (Admin only)
+      description: Updates an existing course. Requires ADMIN role.
+      operationId: updateCourse
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Course ID
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CourseRequest'
+      responses:
+        '200':
+          description: Course updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CourseResponse'
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Admin role required
+        '404':
+          description: Course not found
+        '409':
+          description: Course name already exists
+
+    delete:
+      tags: [Courses]
+      summary: Delete course (Admin only)
+      description: Deletes a course. Requires ADMIN role.
+      operationId: deleteCourse
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Course ID
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Course deleted
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Admin role required
+        '404':
+          description: Course not found
+
+  # ========== ENROLLMENT ENDPOINTS (STUDENT) ==========
+  /students/me/enrollments:
+    get:
+      tags: [Enrollments]
+      summary: List current student's enrollments
+      description: Returns all enrollments for the authenticated student
+      operationId: listMyEnrollments
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of enrollments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EnrollmentResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Student role required
+
+  /enrollments:
+    post:
+      tags: [Enrollments]
+      summary: Enroll in a course
+      description: |
+        Enrolls the authenticated student in a course.
+        Business rules:
+        - Max 3 active enrollments per student
+        - 6-month deadline from enrollment date
+        - Cannot enroll in same course twice
+      operationId: enrollInCourse
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollmentRequest'
+      responses:
+        '201':
+          description: Enrollment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnrollmentResponse'
+        '400':
+          description: Validation error (e.g., max enrollments reached, already enrolled)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Student role required
+        '404':
+          description: Course not found
+        '409':
+          description: Conflict (already enrolled, max enrollments reached, etc.)
+
+  # ========== TASK LOG ENDPOINTS (STUDENT) ==========
+  /enrollments/{enrollmentId}/logs:
+    get:
+      tags: [Task Logs]
+      summary: List task logs for an enrollment
+      description: Returns all task logs for a specific enrollment belonging to the authenticated student
+      operationId: listTaskLogs
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: enrollmentId
+          in: path
+          required: true
+          description: Enrollment ID
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: List of task logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskLogResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Student role required or not owner of enrollment
+        '404':
+          description: Enrollment not found
+
+    post:
+      tags: [Task Logs]
+      summary: Create a task log
+      description: |
+        Creates a new task log for an enrollment.
+        Validation rules:
+        - Time must be in 30-minute increments (00:30, 01:00, 01:30, etc.)
+        - Date portion of timeSpent must match the date field
+        - Category must be one of: PESQUISA, PRATICA, ASSISTIR_VIDEOAULA
+      operationId: createTaskLog
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: enrollmentId
+          in: path
+          required: true
+          description: Enrollment ID
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskLogRequest'
+      responses:
+        '201':
+          description: Task log created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskLogResponse'
+        '400':
+          description: Validation error (invalid time format, not 30-min increment, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Student role required or not owner of enrollment
+        '404':
+          description: Enrollment not found
+
+  /logs/{logId}:
+    put:
+      tags: [Task Logs]
+      summary: Update a task log
+      description: Updates an existing task log. Only the owner can update.
+      operationId: updateTaskLog
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: logId
+          in: path
+          required: true
+          description: Task log ID
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskLogRequest'
+      responses:
+        '200':
+          description: Task log updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskLogResponse'
+        '400':
+          description: Validation error
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Not owner of log
+        '404':
+          description: Task log not found
+
+    delete:
+      tags: [Task Logs]
+      summary: Delete a task log
+      description: Deletes a task log. Only the owner can delete.
+      operationId: deleteTaskLog
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: logId
+          in: path
+          required: true
+          description: Task log ID
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Task log deleted
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden - Not owner of log
+        '404':
+          description: Task log not found
+
+  # ========== TASK CATEGORIES (READ ONLY) ==========
+  /categories:
+    get:
+      tags: [Task Categories]
+      summary: List all task categories
+      description: Returns all available task categories for task logging
+      operationId: listCategories
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of task categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskCategoryResponse'
+        '401':
+          description: Unauthorized
+
+tags:
+  - name: Authentication
+    description: User registration, login, and token management
+  - name: Courses
+    description: Course catalog management (Admin CRUD, Student read)
+  - name: Enrollments
+    description: Student enrollment management
+  - name: Task Logs
+    description: Learning activity tracking
+  - name: Task Categories
+    description: Reference data for task categorization
